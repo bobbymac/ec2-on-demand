@@ -26,6 +26,7 @@ Exiting SSH leaves the instance running until the local stop command or schedule
   - `cost-audit`: Report persistent EBS storage, public or Elastic IPv4 addresses, and other obvious costs that remain while stopped.
 
 - Store the AWS region, instance ID, SSH user, and hostname in an ignored local configuration copied from a committed empty template. Select the correct instance during initial setup using `aws ec2 describe-instances`. Keep AWS access keys exclusively in the local AWS CLI profile under `~/.aws`; never copy credentials or private keys into Git.
+  - During initial setup, the user sets `TAILSCALE_HOST` to the target device name shown by `tailscale status` and `SSH_USER` to its Linux login account. Use these values in the printed SSH command; do not infer the Tailscale name from an EC2 Name tag or public DNS name.
 
 - Implement size selection for the existing VM:
   - Select an actual EC2 type, which determines both RAM and CPU resources. Initial x86 examples are `t3.medium` (4 GiB), `t3.large` (8 GiB), `t3.xlarge` (16 GiB), `t3.2xlarge` (32 GiB), `m5.4xlarge` (64 GiB), and `m5.8xlarge` (128 GiB), subject to compatibility and offerings discovered during setup. Keep the supported list in non-secret configuration.

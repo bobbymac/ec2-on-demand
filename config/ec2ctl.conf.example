@@ -2,6 +2,9 @@
 AWS_REGION=""
 INSTANCE_ID=""
 SSH_USER=""
+# Enter the instance's Tailscale device name shown by `tailscale status`.
+# This is configured separately from the EC2 Name tag and public DNS name.
+# Startup prints: tailscale ssh $SSH_USER@$TAILSCALE_HOST
 TAILSCALE_HOST=""
 
 # Adjust this allowlist for compatible types offered in the instance's AZ.

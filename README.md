@@ -112,6 +112,8 @@ cp iam/ec2ctl-policy.json.example iam/ec2ctl-policy.json
 
 Fill in the region, instance ID, SSH user, Tailscale hostname, and compatible instance types in `config/ec2ctl.conf`. Replace `REGION`, `ACCOUNT_ID`, and `INSTANCE_ID` in the local IAM policy before applying it. These populated files are ignored by Git. Each computer must configure its own AWS profile; credentials remain under `~/.aws`. Never commit populated configuration, credentials, private keys, command output, or maintenance logs.
 
+During initial setup, run `tailscale status` and set `TAILSCALE_HOST` to the device name you assigned to the target instance in Tailscale. Set `SSH_USER` to your Linux login account on that instance. The EC2 Name tag and public DNS name are separate settings; changing them does not update this configuration. Startup prints `tailscale ssh <SSH_USER>@<TAILSCALE_HOST>` using exactly these local values. Update `TAILSCALE_HOST` if you later rename the Tailscale device.
+
 Native Windows/PowerShell and macOS support are outside the initial scope.
 
 ## Costs while stopped
