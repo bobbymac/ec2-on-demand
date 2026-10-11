@@ -9,7 +9,7 @@
         "ec2:StartInstances",
         "ec2:StopInstances"
       ],
-      "Resource": "arn:aws:ec2:us-east-2:118949102665:instance/i-02371433b1d18e6e3"
+      "Resource": "arn:aws:ec2:REGION:ACCOUNT_ID:instance/INSTANCE_ID"
     },
     {
       "Sid": "ReadEC2Metadata",
@@ -30,8 +30,8 @@
       "Effect": "Allow",
       "Action": "ssm:SendCommand",
       "Resource": [
-        "arn:aws:ec2:us-east-2:118949102665:instance/i-02371433b1d18e6e3",
-        "arn:aws:ssm:us-east-2::document/AWS-RunShellScript"
+        "arn:aws:ec2:REGION:ACCOUNT_ID:instance/INSTANCE_ID",
+        "arn:aws:ssm:REGION::document/AWS-RunShellScript"
       ]
     },
     {

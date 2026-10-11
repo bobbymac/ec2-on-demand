@@ -1,10 +1,10 @@
-# Non-secret configuration for the EC2 control toolkit.
-AWS_REGION="us-east-2"
-INSTANCE_ID="i-02371433b1d18e6e3"
-SSH_USER="rjm"
-TAILSCALE_HOST="aws.robertmccaleb.com"
+# Copy this file to ec2ctl.conf and fill in the machine-specific values.
+AWS_REGION=""
+INSTANCE_ID=""
+SSH_USER=""
+TAILSCALE_HOST=""
 
-# These x86_64 types must also be offered in the instance's Availability Zone.
+# Adjust this allowlist for compatible types offered in the instance's AZ.
 SUPPORTED_INSTANCE_TYPES=(
   t3.medium
   t3.large

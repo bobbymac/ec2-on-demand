@@ -2,9 +2,9 @@
 
 ## Project Structure & Module Organization
 
-This repository implements the Bash-based EC2 control toolkit specified in `AWS-Instance-Plan.md`. Read it before making changes. The CLI is in `bin/ec2ctl`, non-secret configuration is in `config/`, fake-AWS tests are in `tests/`, the cron installer is in `scripts/`, and the scoped IAM policy template is in `iam/`.
+This repository implements the Bash-based EC2 control toolkit specified in `AWS-Instance-Plan.md`. Read it before making changes. The CLI is in `bin/ec2ctl`, repository-safe templates are in `config/` and `iam/`, fake-AWS tests are in `tests/`, and the cron installer is in `scripts/`. Populated configuration and IAM files are local and ignored.
 
-Place the planned CLI in `bin/ec2ctl`, fake-AWS tests in `tests/`, and installation helpers in `scripts/`. Keep the region and instance ID in a committed, non-secret configuration file. Store maintenance logs outside Git tracking. No frontend or asset pipeline is planned.
+Keep the CLI in `bin/ec2ctl`, fake-AWS tests in `tests/`, and installation helpers in `scripts/`. Keep personal instance settings in ignored local files created from the committed empty templates. Store maintenance logs outside Git tracking. No frontend or asset pipeline is planned.
 
 ## Build, Test, and Development Commands
 

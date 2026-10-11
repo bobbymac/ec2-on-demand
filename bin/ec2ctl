@@ -39,12 +39,13 @@ done
 command_name=$1
 shift
 
-[[ -r $config_file ]] || die "configuration not readable: $config_file"
+[[ -r $config_file ]] || die "configuration not readable: $config_file (copy config/ec2ctl.conf.example to config/ec2ctl.conf)"
 # shellcheck source=/dev/null
 source "$config_file"
 : "${AWS_REGION:?AWS_REGION is required in $config_file}"
 : "${INSTANCE_ID:?INSTANCE_ID is required in $config_file}"
-: "${SSH_USER:=rjm}" "${TAILSCALE_HOST:=aws.robertmccaleb.com}"
+: "${SSH_USER:?SSH_USER is required in $config_file}"
+: "${TAILSCALE_HOST:?TAILSCALE_HOST is required in $config_file}"
 : "${START_TIMEOUT:=600}" "${SSM_TIMEOUT:=600}" "${PATCH_TIMEOUT:=3600}"
 : "${REBOOT_TIMEOUT:=900}" "${STOP_TIMEOUT:=600}" "${FORCE_STOP_TIMEOUT:=300}"
 : "${POLL_INTERVAL:=10}"

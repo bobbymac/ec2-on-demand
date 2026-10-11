@@ -2,7 +2,7 @@
 
 A Bash toolkit for using an existing Amazon EC2 instance when you need it: choose its size, start it, connect to work, and stop it afterward. Scheduled maintenance keeps the Ubuntu guest updated through AWS Systems Manager.
 
-**Project status:** Implemented. The CLI is configured for the private Ubuntu instance in `us-east-2`; lifecycle-changing live tests should only be run during an approved interruption window. See [AWS-Instance-Plan.md](AWS-Instance-Plan.md) for the full design.
+**Project status:** Implemented. Copy the configuration templates and add your local values before use. Lifecycle-changing live tests should only be run during an approved interruption window. See [AWS-Instance-Plan.md](AWS-Instance-Plan.md) for the full design.
 
 ## Why this exists
 
@@ -40,7 +40,7 @@ These examples use an AWS profile named `workstation`. Omit `--profile` to use t
 ./bin/ec2ctl --profile workstation start --instance-type t3.xlarge
 ```
 
-After startup and health checks, run the printed `tailscale ssh rjm@aws.robertmccaleb.com` command. When finished, exit SSH and explicitly stop the instance:
+After startup and health checks, run the printed `tailscale ssh <user>@<host>` command. When finished, exit SSH and explicitly stop the instance:
 
 ```bash
 ./bin/ec2ctl --profile workstation stop
@@ -101,7 +101,14 @@ The toolkit requires:
 - Tailscale on both ends when using the interactive Tailscale SSH workflow.
 - An always-on, connected cron host with `flock` for scheduled maintenance.
 
-The region, instance ID, hostname, supported types, and timeout values live in [`config/ec2ctl.conf`](config/ec2ctl.conf). They are not secrets. Each computer must configure its own AWS profile; credentials remain under `~/.aws`. Never commit credentials, SSH private keys, Tailscale credentials, command output, or maintenance logs.
+Create the ignored local configuration and IAM policy from the repository-safe templates:
+
+```bash
+cp config/ec2ctl.conf.example config/ec2ctl.conf
+cp iam/ec2ctl-policy.json.example iam/ec2ctl-policy.json
+```
+
+Fill in the region, instance ID, SSH user, Tailscale hostname, and compatible instance types in `config/ec2ctl.conf`. Replace `REGION`, `ACCOUNT_ID`, and `INSTANCE_ID` in the local IAM policy before applying it. These populated files are ignored by Git. Each computer must configure its own AWS profile; credentials remain under `~/.aws`. Never commit populated configuration, credentials, private keys, command output, or maintenance logs.
 
 Native Windows/PowerShell and macOS support are outside the initial scope.
 
@@ -120,8 +127,8 @@ Stopping the instance avoids its running compute charges, but it does not remove
 | `AWS-Instance-Plan.md` | Detailed implementation and acceptance plan | Available |
 | `AGENTS.md` | Contributor guidelines | Available |
 | `docs/images/` | SVG diagrams used in this README | Available |
-| `config/ec2ctl.conf` | Non-secret instance and timeout configuration | Available |
-| `iam/ec2ctl-policy.json` | Least-privilege policy for the configured instance | Available |
+| `config/ec2ctl.conf.example` | Empty configuration template | Available |
+| `iam/ec2ctl-policy.json.example` | Least-privilege IAM policy template | Available |
 | `bin/ec2ctl` | Bash CLI | Available |
 | `tests/` | Tests using a fake `aws` executable | Available |
 | `scripts/install-cron` | Idempotent local cron installer | Available |

@@ -12,6 +12,10 @@
 *.pfx
 credentials
 
+# Machine-specific EC2 and IAM configuration
+config/ec2ctl.conf
+iam/ec2ctl-policy.json
+
 # Maintenance output and machine-local state
 logs/
 *.log
