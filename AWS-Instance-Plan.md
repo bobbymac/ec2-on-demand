@@ -9,7 +9,7 @@ Tailscale is required only for interactive SSH after startup. AWS CLI and System
 ## Daily Workflow
 
 1. On the local machine, run `./bin/ec2ctl --profile NAME sizes` to see supported instance types with RAM and vCPU counts. Run `start --choose` for an interactive size menu, `start --instance-type t3.xlarge` to request a specific type, or plain `start` to reuse the instance's current type.
-2. Copy and run the printed `tailscale ssh <user>@aws.robertmccaleb.com` command to work on the instance. Starting the instance does not open SSH automatically.
+2. Copy and run the printed `tailscale ssh rjm@aws.robertmccaleb.com` command to work on the instance. Starting the instance does not open SSH automatically.
 3. Run `exit` to leave the SSH session and return to the local shell.
 4. Run `./bin/ec2ctl --profile NAME stop` locally; the toolkit uses AWS CLI to stop the VM.
 
@@ -19,7 +19,7 @@ Exiting SSH leaves the instance running until the local stop command or schedule
 
 - Add `bin/ec2ctl` with these commands:
   - `sizes`: List supported instance types starting at 4 GiB RAM, with type name, RAM, vCPU count, and a marker for the current type. Query AWS for specifications and offerings in the target instance's Availability Zone; do not treat an offered type as a guarantee of spare capacity.
-  - `start [--instance-type TYPE | --choose]`: Optionally change the stopped instance to the selected type, start it, wait for EC2 health checks, and print `tailscale ssh <user>@aws.robertmccaleb.com`. Plain `start` uses its current type.
+  - `start [--instance-type TYPE | --choose]`: Optionally change the stopped instance to the selected type, start it, wait for EC2 health checks, and print `tailscale ssh rjm@aws.robertmccaleb.com`. Plain `start` uses its current type.
   - `stop`: Request a normal EC2 shutdown, retry within a finite deadline, and attempt a forced stop if normal shutdown does not complete. Wait for the stopped state with a finite timeout and return an error if shutdown cannot be confirmed.
   - `status`: Show EC2 state, launch time, instance type, Systems Manager availability, and the last locally recorded maintenance result.
   - `maintain`: Start if necessary, wait for Systems Manager, install all Ubuntu updates, capture output, reboot and verify health when required, and always attempt shutdown afterward—even if it was already running or an update or verification fails. Use the same normal-then-forced shutdown policy as `stop`.

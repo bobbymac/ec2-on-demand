@@ -40,7 +40,7 @@ These examples use an AWS profile named `workstation`. Omit `--profile` to use t
 ./bin/ec2ctl --profile workstation start --instance-type t3.xlarge
 ```
 
-After startup and health checks, run the printed `tailscale ssh ubuntu@aws.robertmccaleb.com` command. When finished, exit SSH and explicitly stop the instance:
+After startup and health checks, run the printed `tailscale ssh rjm@aws.robertmccaleb.com` command. When finished, exit SSH and explicitly stop the instance:
 
 ```bash
 ./bin/ec2ctl --profile workstation stop

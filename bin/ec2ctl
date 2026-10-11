@@ -44,7 +44,7 @@ shift
 source "$config_file"
 : "${AWS_REGION:?AWS_REGION is required in $config_file}"
 : "${INSTANCE_ID:?INSTANCE_ID is required in $config_file}"
-: "${SSH_USER:=ubuntu}" "${TAILSCALE_HOST:=aws.robertmccaleb.com}"
+: "${SSH_USER:=rjm}" "${TAILSCALE_HOST:=aws.robertmccaleb.com}"
 : "${START_TIMEOUT:=600}" "${SSM_TIMEOUT:=600}" "${PATCH_TIMEOUT:=3600}"
 : "${REBOOT_TIMEOUT:=900}" "${STOP_TIMEOUT:=600}" "${FORCE_STOP_TIMEOUT:=300}"
 : "${POLL_INTERVAL:=10}"
