@@ -1,0 +1,27 @@
+# Local credentials and agent settings
+.aws/
+.ssh/
+.codex/
+.agents/
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+credentials
+
+# Maintenance output and machine-local state
+logs/
+*.log
+.state/
+.local/
+maintenance-results/
+*.out
+
+# Editor and operating-system files
+*.swp
+*~
+.DS_Store
+Thumbs.db

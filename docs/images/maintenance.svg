@@ -1,0 +1,49 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1040" height="492" viewBox="0 0 1040 492" role="img" aria-labelledby="title desc">
+  <title id="title">Planned weekly maintenance lifecycle</title>
+  <desc id="desc">Saturday at 3 AM America/Chicago, the local cron host acquires a lock. Maintenance starts the instance, waits for Systems Manager, installs Ubuntu updates, and reboots and verifies health if required. Success and failure paths both attempt shutdown, using normal then forced stop if needed. Results and unconfirmed shutdowns are recorded locally.</desc>
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#475569"/></marker>
+    <marker id="failure-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M 0 0 L 10 5 L 0 10 z" fill="#b45309"/></marker>
+  </defs>
+  <rect width="1040" height="492" rx="20" fill="#f8fafc"/>
+  <g font-family="Arial, Helvetica, sans-serif">
+    <text x="36" y="46" font-size="25" font-weight="700" fill="#0f172a">Weekly updates with shutdown cleanup</text>
+    <text x="36" y="76" font-size="16" fill="#475569">Local cron · Saturday 03:00 America/Chicago · acquire maintenance lock before starting</text>
+    <g fill="#e0f2fe" stroke="#0284c7" stroke-width="2">
+      <rect x="36" y="116" width="280" height="104" rx="14"/>
+      <rect x="380" y="116" width="280" height="104" rx="14"/>
+      <rect x="724" y="116" width="280" height="104" rx="14"/>
+    </g>
+    <g font-size="20" font-weight="700" fill="#0c4a6e">
+      <text x="58" y="152">1. Start and connect</text>
+      <text x="402" y="152">2. Install updates</text>
+      <text x="746" y="152">3. Verify health</text>
+    </g>
+    <g font-size="16" fill="#334155">
+      <text x="58" y="188">Wait for Systems Manager</text>
+      <text x="402" y="188">Refresh APT and upgrade</text>
+      <text x="746" y="188">Reboot first when required</text>
+    </g>
+    <rect x="36" y="336" width="410" height="110" rx="14" fill="#f1f5f9" stroke="#64748b" stroke-width="2"/>
+    <text x="58" y="373" font-size="20" font-weight="700" fill="#0f172a">5. Record the result locally</text>
+    <text x="58" y="407" font-size="16" fill="#334155">Keep update and shutdown outcomes separate</text>
+    <rect x="590" y="336" width="414" height="110" rx="14" fill="#ecfdf5" stroke="#047857" stroke-width="2"/>
+    <text x="612" y="373" font-size="20" font-weight="700" fill="#064e3b">4. Attempt shutdown</text>
+    <text x="612" y="405" font-size="16" fill="#334155">Normal stop, then forced stop if needed</text>
+    <text x="612" y="430" font-size="15" fill="#334155">Report failure if stopped state is unconfirmed</text>
+    <g fill="none" stroke="#475569" stroke-width="2.5" marker-end="url(#arrow)">
+      <path d="M316 168 H380"/>
+      <path d="M660 168 H724"/>
+      <path d="M940 220 V336"/>
+      <path d="M590 391 H446"/>
+    </g>
+    <text x="952" y="280" font-size="14" fill="#334155">Success</text>
+    <g fill="none" stroke="#b45309" stroke-width="2.5" stroke-dasharray="6 5">
+      <path d="M176 220 V270 H798 V336" marker-end="url(#failure-arrow)"/>
+      <path d="M520 220 V270"/>
+      <path d="M798 220 V270"/>
+    </g>
+    <text x="176" y="304" font-size="16" fill="#92400e">Failure, timeout, or interruption → shutdown cleanup</text>
+    <text x="36" y="477" font-size="15" fill="#475569">Maintenance attempts shutdown even when the instance was already running.</text>
+  </g>
+</svg>

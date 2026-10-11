@@ -1,0 +1,41 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1040" height="500" viewBox="0 0 1040 500" role="img" aria-labelledby="title desc">
+  <title id="title">EC2 Control Toolkit architecture</title>
+  <desc id="desc">On a Linux or WSL computer, ec2ctl uses a local AWS profile to control an EC2 instance through AWS APIs and to request Ubuntu updates through Systems Manager. An optional Tailscale SSH connection is used for interactive work. A local cron host schedules maintenance.</desc>
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#475569"/></marker>
+  </defs>
+  <rect width="1040" height="500" rx="20" fill="#f8fafc"/>
+  <g font-family="Arial, Helvetica, sans-serif">
+    <text x="36" y="46" font-size="25" font-weight="700" fill="#0f172a">Your machine controls the workflow</text>
+    <text x="36" y="75" font-size="16" fill="#475569">Planned architecture · one existing instance · local credentials and scheduling</text>
+    <rect x="36" y="116" width="280" height="264" rx="14" fill="#e0f2fe" stroke="#0284c7" stroke-width="2"/>
+    <text x="60" y="152" font-size="21" font-weight="700" fill="#0c4a6e">Linux / WSL</text>
+    <text x="60" y="193" font-size="20" font-weight="700" fill="#0f172a">ec2ctl + AWS CLI</text>
+    <text x="60" y="225" font-size="16" fill="#334155">Local AWS profile (~/.aws)</text>
+    <text x="60" y="261" font-size="16" fill="#334155">Manual start, resize, stop</text>
+    <text x="60" y="291" font-size="16" fill="#334155">Cron host: weekly maintenance</text>
+    <text x="60" y="321" font-size="16" fill="#334155">Local logs and results</text>
+    <rect x="396" y="116" width="242" height="104" rx="14" fill="#fff7ed" stroke="#c2410c" stroke-width="2"/>
+    <text x="420" y="151" font-size="20" font-weight="700" fill="#7c2d12">EC2 API</text>
+    <text x="420" y="184" font-size="16" fill="#334155">Lifecycle, sizes, health</text>
+    <rect x="396" y="272" width="242" height="108" rx="14" fill="#fff7ed" stroke="#c2410c" stroke-width="2"/>
+    <text x="420" y="309" font-size="20" font-weight="700" fill="#7c2d12">Systems Manager</text>
+    <text x="420" y="343" font-size="16" fill="#334155">Remote update commands</text>
+    <rect x="718" y="116" width="286" height="264" rx="14" fill="#ecfdf5" stroke="#047857" stroke-width="2"/>
+    <text x="742" y="154" font-size="21" font-weight="700" fill="#064e3b">Existing EC2 instance</text>
+    <text x="742" y="198" font-size="17" fill="#334155">Ubuntu + SSM Agent</text>
+    <text x="742" y="230" font-size="17" fill="#334155">Selected CPU and RAM</text>
+    <rect x="742" y="262" width="238" height="88" rx="10" fill="#ffffff" stroke="#047857"/>
+    <text x="760" y="295" font-size="18" font-weight="700" fill="#064e3b">Persistent EBS storage</text>
+    <text x="760" y="324" font-size="15" fill="#334155">Retained across stop / start</text>
+    <g fill="none" stroke="#475569" stroke-width="2.5" marker-end="url(#arrow)">
+      <path d="M316 168 H396"/>
+      <path d="M638 168 H718"/>
+      <path d="M316 326 H396"/>
+      <path d="M638 326 H718"/>
+      <path d="M176 380 V444 H861 V380" stroke-dasharray="7 5"/>
+    </g>
+    <rect x="325" y="427" width="394" height="34" rx="8" fill="#f8fafc"/>
+    <text x="522" y="449" text-anchor="middle" font-size="16" fill="#334155">Optional Tailscale SSH · interactive work</text>
+  </g>
+</svg>
