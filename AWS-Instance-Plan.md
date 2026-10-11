@@ -2,14 +2,14 @@
 
 ## Summary
 
-Create a private GitHub repository at `bobbymac/AWS-Instance` containing a Bash-based AWS CLI utility for Linux and Windows through WSL. It will let the user select the VM's actual EC2 instance type, then manually start, stop, and inspect it from configured machines, while the current always-on machine runs weekly maintenance every Saturday at 3:00 AM America/Chicago.
+Create a private GitHub repository at `bobbymac/ec2-on-demand` containing a Bash-based AWS CLI utility for Linux and Windows through WSL. It will let the user select the VM's actual EC2 instance type, then manually start, stop, and inspect it from configured machines, while the current always-on machine runs weekly maintenance every Saturday at 3:00 AM America/Chicago.
 
 Tailscale is required only for interactive SSH after startup. AWS CLI and Systems Manager handle starting, patching, and stopping the instance.
 
 ## Daily Workflow
 
 1. On the local machine, run `./bin/ec2ctl --profile NAME sizes` to see supported instance types with RAM and vCPU counts. Run `start --choose` for an interactive size menu, `start --instance-type t3.xlarge` to request a specific type, or plain `start` to reuse the instance's current type.
-2. Copy and run the printed `tailscale ssh <user>@blog-aws` command to work on the instance. Starting the instance does not open SSH automatically.
+2. Copy and run the printed `tailscale ssh <user>@aws.robertmccaleb.com` command to work on the instance. Starting the instance does not open SSH automatically.
 3. Run `exit` to leave the SSH session and return to the local shell.
 4. Run `./bin/ec2ctl --profile NAME stop` locally; the toolkit uses AWS CLI to stop the VM.
 
@@ -19,7 +19,7 @@ Exiting SSH leaves the instance running until the local stop command or schedule
 
 - Add `bin/ec2ctl` with these commands:
   - `sizes`: List supported instance types starting at 4 GiB RAM, with type name, RAM, vCPU count, and a marker for the current type. Query AWS for specifications and offerings in the target instance's Availability Zone; do not treat an offered type as a guarantee of spare capacity.
-  - `start [--instance-type TYPE | --choose]`: Optionally change the stopped instance to the selected type, start it, wait for EC2 health checks, and print `tailscale ssh <user>@blog-aws`. Plain `start` uses its current type.
+  - `start [--instance-type TYPE | --choose]`: Optionally change the stopped instance to the selected type, start it, wait for EC2 health checks, and print `tailscale ssh <user>@aws.robertmccaleb.com`. Plain `start` uses its current type.
   - `stop`: Request a normal EC2 shutdown, retry within a finite deadline, and attempt a forced stop if normal shutdown does not complete. Wait for the stopped state with a finite timeout and return an error if shutdown cannot be confirmed.
   - `status`: Show EC2 state, launch time, instance type, Systems Manager availability, and the last locally recorded maintenance result.
   - `maintain`: Start if necessary, wait for Systems Manager, install all Ubuntu updates, capture output, reboot and verify health when required, and always attempt shutdown afterward—even if it was already running or an update or verification fails. Use the same normal-then-forced shutdown policy as `stop`.
@@ -90,7 +90,7 @@ Exiting SSH leaves the instance running until the local stop command or schedule
 
 ## Assumptions and Defaults
 
-- The Tailscale node `blog-aws` is the target EC2 instance.
+- The Tailscale node `aws.robertmccaleb.com` is the target EC2 instance.
 - The exact EC2 instance ID, AWS region, Ubuntu login user, and Systems Manager status will be discovered during initial setup because they were not available locally.
 - The key is `~/LEYS/AWS-RJM.pem`; its location is documented but never committed.
 - "Update all packages" means refreshing APT metadata and installing the complete available upgrade set, not merely running `apt update`.

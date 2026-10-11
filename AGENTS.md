@@ -2,13 +2,13 @@
 
 ## Project Structure & Module Organization
 
-This repository currently contains `AWS-Instance-Plan.md`, the implementation specification for a Bash-based EC2 control toolkit. Read it before making changes. Source code, tests, and build tooling have not been added yet.
+This repository implements the Bash-based EC2 control toolkit specified in `AWS-Instance-Plan.md`. Read it before making changes. The CLI is in `bin/ec2ctl`, non-secret configuration is in `config/`, fake-AWS tests are in `tests/`, the cron installer is in `scripts/`, and the scoped IAM policy template is in `iam/`.
 
 Place the planned CLI in `bin/ec2ctl`, fake-AWS tests in `tests/`, and installation helpers in `scripts/`. Keep the region and instance ID in a committed, non-secret configuration file. Store maintenance logs outside Git tracking. No frontend or asset pipeline is planned.
 
 ## Build, Test, and Development Commands
 
-There is currently no build step or runnable test suite. Once implemented, use:
+There is no build step. Use:
 
 - `./bin/ec2ctl --profile NAME status`: inspect EC2 state and Systems Manager availability.
 - `./bin/ec2ctl --profile NAME start`: start the instance and wait for health checks.

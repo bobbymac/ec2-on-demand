@@ -1,0 +1,342 @@
+#!/usr/bin/env bash
+set -uo pipefail
+
+script_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
+repo_dir=$(cd -- "$script_dir/.." && pwd)
+config_file=${EC2CTL_CONFIG:-"$repo_dir/config/ec2ctl.conf"}
+aws_profile=${AWS_PROFILE:-}
+
+usage() {
+  cat <<'EOF'
+Usage: ec2ctl [--profile NAME] [--config FILE] COMMAND [OPTIONS]
+
+Commands:
+  sizes                         List configured, available instance types
+  start [--instance-type TYPE]  Resize if requested, then start
+  start --choose                Interactively select a size, then start
+  stop                          Stop normally, forcing only after timeout
+  status                        Show EC2, SSM, and local maintenance status
+  maintain                      Patch Ubuntu and always stop afterward
+  cost-audit                    Show persistent resources that can still cost money
+EOF
+}
+
+die() { printf 'error: %s\n' "$*" >&2; exit 1; }
+warn() { printf 'warning: %s\n' "$*" >&2; }
+
+while (($#)); do
+  case $1 in
+    --profile) (($# >= 2)) || die '--profile requires a name'; aws_profile=$2; shift 2 ;;
+    --config) (($# >= 2)) || die '--config requires a path'; config_file=$2; shift 2 ;;
+    -h|--help) usage; exit 0 ;;
+    --) shift; break ;;
+    -*) die "unknown global option: $1" ;;
+    *) break ;;
+  esac
+done
+
+(($#)) || { usage >&2; exit 2; }
+command_name=$1
+shift
+
+[[ -r $config_file ]] || die "configuration not readable: $config_file"
+# shellcheck source=/dev/null
+source "$config_file"
+: "${AWS_REGION:?AWS_REGION is required in $config_file}"
+: "${INSTANCE_ID:?INSTANCE_ID is required in $config_file}"
+: "${SSH_USER:=ubuntu}" "${TAILSCALE_HOST:=aws.robertmccaleb.com}"
+: "${START_TIMEOUT:=600}" "${SSM_TIMEOUT:=600}" "${PATCH_TIMEOUT:=3600}"
+: "${REBOOT_TIMEOUT:=900}" "${STOP_TIMEOUT:=600}" "${FORCE_STOP_TIMEOUT:=300}"
+: "${POLL_INTERVAL:=10}"
+declare -p SUPPORTED_INSTANCE_TYPES >/dev/null 2>&1 || die 'SUPPORTED_INSTANCE_TYPES must be configured'
+
+aws_cli() {
+  local -a cmd=(aws --no-cli-pager)
+  [[ -z $aws_profile ]] || cmd+=(--profile "$aws_profile")
+  cmd+=(--region "$AWS_REGION")
+  "${cmd[@]}" "$@"
+}
+
+require_aws() { command -v aws >/dev/null || die 'AWS CLI v2 is required'; }
+ec2_value() { aws_cli ec2 describe-instances --instance-ids "$INSTANCE_ID" --query "$1" --output text; }
+instance_state() { ec2_value 'Reservations[0].Instances[0].State.Name'; }
+
+wait_for_state() {
+  local wanted=$1 timeout=$2 deadline state last=''
+  deadline=$((SECONDS + timeout))
+  while ((SECONDS <= deadline)); do
+    state=$(instance_state) || return 1
+    if [[ $state != "$last" ]]; then printf 'EC2 state: %s\n' "$state"; last=$state; fi
+    [[ $state == "$wanted" ]] && return 0
+    [[ $state != terminated && $state != shutting-down ]] || return 1
+    sleep "$POLL_INTERVAL"
+  done
+  return 124
+}
+
+wait_for_health() {
+  local deadline=$((SECONDS + START_TIMEOUT)) health
+  while ((SECONDS <= deadline)); do
+    health=$(aws_cli ec2 describe-instance-status --include-all-instances --instance-ids "$INSTANCE_ID" \
+      --query 'InstanceStatuses[0].[InstanceStatus.Status,SystemStatus.Status]' --output text) || return 1
+    [[ $health == $'ok\tok' ]] && { printf 'EC2 health checks: ok\n'; return 0; }
+    sleep "$POLL_INTERVAL"
+  done
+  return 124
+}
+
+is_supported_type() {
+  local candidate=$1 item
+  for item in "${SUPPORTED_INSTANCE_TYPES[@]}"; do [[ $candidate == "$item" ]] && return 0; done
+  return 1
+}
+
+instance_type_details() {
+  aws_cli ec2 describe-instance-types --instance-types "$1" \
+    --query 'InstanceTypes[0].[MemoryInfo.SizeInMiB,VCpuInfo.DefaultVCpus,ProcessorInfo.SupportedArchitectures[0],SupportedVirtualizationTypes[0],EbsInfo.NvmeSupport,NetworkInfo.EnaSupport]' --output text
+}
+
+availability_zone() { ec2_value 'Reservations[0].Instances[0].Placement.AvailabilityZone'; }
+
+type_is_offered() {
+  local type=$1 az offered
+  az=$(availability_zone) || return 1
+  offered=$(aws_cli ec2 describe-instance-type-offerings --location-type availability-zone \
+    --filters "Name=location,Values=$az" "Name=instance-type,Values=$type" \
+    --query 'InstanceTypeOfferings[0].InstanceType' --output text) || return 1
+  [[ $offered == "$type" ]]
+}
+
+validate_resize() {
+  local desired=$1 image_id image_arch current_type current_nvme desired_details desired_arch desired_virt desired_nvme
+  is_supported_type "$desired" || die "unsupported instance type: $desired"
+  type_is_offered "$desired" || die "$desired is not offered in Availability Zone $(availability_zone)"
+  current_type=$(ec2_value 'Reservations[0].Instances[0].InstanceType') || return 1
+  image_id=$(ec2_value 'Reservations[0].Instances[0].ImageId') || return 1
+  image_arch=$(ec2_value 'Reservations[0].Instances[0].Architecture') || return 1
+  desired_details=$(instance_type_details "$desired") || return 1
+  IFS=$'\t' read -r _ _ desired_arch desired_virt desired_nvme _ <<<"$desired_details"
+  [[ $desired_arch == "$image_arch" ]] || die "$desired architecture $desired_arch does not match image architecture $image_arch"
+  [[ $desired_virt == hvm ]] || die "$desired does not support the instance's HVM virtualization"
+  current_nvme=$(aws_cli ec2 describe-instance-types --instance-types "$current_type" \
+    --query 'InstanceTypes[0].EbsInfo.NvmeSupport' --output text) || return 1
+  if [[ $current_nvme == unsupported && $desired_nvme != unsupported ]]; then
+    die 'resize would introduce NVMe; verify guest NVMe drivers before adding this type to the supported list'
+  fi
+  [[ -n $image_id ]] || return 1
+}
+
+show_sizes() {
+  (($# == 0)) || die 'sizes takes no options'
+  local current type details memory_mib vcpus _ offered marker memory_gib
+  current=$(ec2_value 'Reservations[0].Instances[0].InstanceType') || return 1
+  printf '%-16s %8s %6s %10s\n' TYPE RAM_GIB VCPUS AVAILABLE
+  for type in "${SUPPORTED_INSTANCE_TYPES[@]}"; do
+    details=$(instance_type_details "$type") || { warn "could not inspect $type"; continue; }
+    IFS=$'\t' read -r memory_mib vcpus _ <<<"$details"
+    memory_gib=$((memory_mib / 1024))
+    offered=no; type_is_offered "$type" && offered=yes
+    marker=''; [[ $type == "$current" ]] && marker=' * current'
+    printf '%-16s %8s %6s %10s%s\n' "$type" "$memory_gib" "$vcpus" "$offered" "$marker"
+  done
+}
+
+chosen_type=''
+choose_type() {
+  [[ -t 0 && -t 1 ]] || die '--choose requires an interactive terminal'
+  show_sizes
+  local choice
+  printf 'Instance type (blank cancels): '
+  IFS= read -r choice
+  [[ -n $choice ]] || die 'selection cancelled; no changes made'
+  is_supported_type "$choice" || die "unsupported instance type: $choice"
+  chosen_type=$choice
+}
+
+start_instance() {
+  local requested='' choose=false state current
+  while (($#)); do
+    case $1 in
+      --instance-type) (($# >= 2)) || die '--instance-type requires a value'; requested=$2; shift 2 ;;
+      --choose) choose=true; shift ;;
+      *) die "unknown start option: $1" ;;
+    esac
+  done
+  [[ $choose == false || -z $requested ]] || die '--choose and --instance-type cannot be combined'
+  if [[ $choose == true ]]; then choose_type; requested=$chosen_type; fi
+  state=$(instance_state) || return 1
+  current=$(ec2_value 'Reservations[0].Instances[0].InstanceType') || return 1
+  if [[ -n $requested && $requested != "$current" ]]; then
+    [[ $state == stopped ]] || die "instance is $state; run stop before changing its type"
+    validate_resize "$requested" || return 1
+    printf 'Changing instance type from %s to %s...\n' "$current" "$requested"
+    aws_cli ec2 modify-instance-attribute --instance-id "$INSTANCE_ID" --instance-type "Value=$requested" >/dev/null || return 1
+    current=$(ec2_value 'Reservations[0].Instances[0].InstanceType') || return 1
+    [[ $current == "$requested" ]] || die "AWS did not confirm requested type; current type is $current"
+  fi
+  case $state in
+    running) printf 'Instance is already running.\n' ;;
+    stopped) printf 'Starting %s (%s)...\n' "$INSTANCE_ID" "$current"; aws_cli ec2 start-instances --instance-ids "$INSTANCE_ID" >/dev/null || return 1 ;;
+    pending) printf 'Instance is already starting.\n' ;;
+    *) die "instance is $state; wait until it is stopped before starting" ;;
+  esac
+  wait_for_state running "$START_TIMEOUT" || die 'instance did not reach running state before the timeout'
+  wait_for_health || die 'EC2 health checks did not pass before the timeout'
+  printf 'Connect with: tailscale ssh %s@%s\n' "$SSH_USER" "$TAILSCALE_HOST"
+}
+
+stop_instance() {
+  (($# == 0)) || die 'stop takes no options'
+  local state
+  state=$(instance_state) || return 1
+  [[ $state != stopped ]] || { printf 'Instance is already stopped.\n'; return 0; }
+  if [[ $state == terminated || $state == shutting-down ]]; then warn "instance is $state"; return 1; fi
+  printf 'Requesting normal shutdown...\n'
+  aws_cli ec2 stop-instances --instance-ids "$INSTANCE_ID" >/dev/null || return 1
+  if wait_for_state stopped "$STOP_TIMEOUT"; then return 0; fi
+  warn 'normal shutdown timed out; requesting forced stop (writes may be interrupted)'
+  aws_cli ec2 stop-instances --force --instance-ids "$INSTANCE_ID" >/dev/null || return 1
+  wait_for_state stopped "$FORCE_STOP_TIMEOUT" || { warn 'forced stop could not be confirmed'; return 1; }
+}
+
+state_dir_path() { printf '%s/ec2ctl' "${XDG_STATE_HOME:-${HOME}/.local/state}"; }
+
+show_status() {
+  (($# == 0)) || die 'status takes no options'
+  local details ssm record key value
+  details=$(ec2_value 'Reservations[0].Instances[0].[State.Name,InstanceType,LaunchTime,Placement.AvailabilityZone,PublicIpAddress]') || return 1
+  IFS=$'\t' read -r state type launch az public_ip <<<"$details"
+  [[ $public_ip != None ]] || public_ip='(none)'
+  ssm=$(aws_cli ssm describe-instance-information --filters "Key=InstanceIds,Values=$INSTANCE_ID" \
+    --query 'InstanceInformationList[0].PingStatus' --output text) || ssm='unknown'
+  [[ $ssm != None ]] || ssm='not registered'
+  printf 'Instance: %s\nRegion/AZ: %s / %s\nState: %s\nType: %s\nLaunch time: %s\nPublic IPv4: %s\nSystems Manager: %s\n' \
+    "$INSTANCE_ID" "$AWS_REGION" "$az" "$state" "$type" "$launch" "$public_ip" "$ssm"
+  record="$(state_dir_path)/last-maintenance"
+  if [[ -r $record ]]; then
+    printf 'Last local maintenance:\n'
+    while IFS='=' read -r key value; do printf '  %s: %s\n' "$key" "$value"; done <"$record"
+  else
+    printf 'Last local maintenance: no local result available\n'
+  fi
+}
+
+wait_for_ssm() {
+  local deadline=$((SECONDS + SSM_TIMEOUT)) status
+  while ((SECONDS <= deadline)); do
+    status=$(aws_cli ssm describe-instance-information --filters "Key=InstanceIds,Values=$INSTANCE_ID" \
+      --query 'InstanceInformationList[0].PingStatus' --output text) || status=''
+    [[ $status == Online ]] && return 0
+    sleep "$POLL_INTERVAL"
+  done
+  return 124
+}
+
+ssm_output='' ssm_status=''
+run_ssm() {
+  local parameters=$1 timeout=$2 command_id deadline status
+  command_id=$(aws_cli ssm send-command --instance-ids "$INSTANCE_ID" --document-name AWS-RunShellScript \
+    --parameters "$parameters" --timeout-seconds "$timeout" --query 'Command.CommandId' --output text) || return 1
+  deadline=$((SECONDS + timeout))
+  while ((SECONDS <= deadline)); do
+    status=$(aws_cli ssm get-command-invocation --command-id "$command_id" --instance-id "$INSTANCE_ID" --query Status --output text 2>/dev/null) || status=Pending
+    case $status in Pending|InProgress|Delayed) sleep "$POLL_INTERVAL" ;; *) break ;; esac
+  done
+  ssm_status=$status
+  ssm_output=$(aws_cli ssm get-command-invocation --command-id "$command_id" --instance-id "$INSTANCE_ID" \
+    --query '[StandardOutputContent,StandardErrorContent]' --output text 2>/dev/null || true)
+  printf '%s\n' "$ssm_output"
+  [[ $status == Success ]]
+}
+
+maintenance_started='' update_outcome='not-run' reboot_outcome='not-required' shutdown_outcome='not-run' maintenance_log='' maintenance_rc=1 cleanup_active=false
+maintenance_cleanup() {
+  local incoming_rc=$1 completed record
+  [[ $cleanup_active == false ]] || return
+  cleanup_active=true
+  trap - EXIT INT TERM
+  ((incoming_rc == 0 && maintenance_rc == 0)) || maintenance_rc=1
+  printf 'Stopping instance after maintenance...\n'
+  if stop_instance; then shutdown_outcome=success; else shutdown_outcome=failure; maintenance_rc=1; fi
+  completed=$(TZ=America/Chicago date --iso-8601=seconds)
+  record="$(state_dir_path)/last-maintenance"
+  {
+    printf 'started_at=%s\n' "$maintenance_started"
+    printf 'completed_at=%s\n' "$completed"
+    printf 'update_outcome=%s\n' "$update_outcome"
+    printf 'reboot_outcome=%s\n' "$reboot_outcome"
+    printf 'shutdown_outcome=%s\n' "$shutdown_outcome"
+    printf 'log=%s\n' "$maintenance_log"
+  } >"$record"
+  printf 'Maintenance result: %s; shutdown: %s\n' "$([[ $maintenance_rc == 0 ]] && printf success || printf failure)" "$shutdown_outcome"
+  exit "$maintenance_rc"
+}
+
+maintain_instance() {
+  (($# == 0)) || die 'maintain takes no options'
+  local state_dir lock_file boot_before
+  state_dir=$(state_dir_path); mkdir -p -m 700 "$state_dir" || return 1
+  lock_file="$state_dir/maintenance.lock"
+  if [[ ${EC2CTL_LOCK_HELD:-0} != 1 ]]; then
+    exec 9>"$lock_file"
+    flock -n 9 || die 'another maintenance run is active'
+  fi
+  maintenance_started=$(TZ=America/Chicago date --iso-8601=seconds)
+  maintenance_log="$state_dir/maintenance-$(date +%Y%m%dT%H%M%S).log"
+  exec > >(tee -a "$maintenance_log") 2>&1
+  trap 'maintenance_cleanup $?' EXIT
+  trap 'exit 130' INT TERM
+  printf 'Maintenance started: %s\n' "$maintenance_started"
+  start_instance || return 1
+  wait_for_ssm || { warn 'Systems Manager did not become available'; return 1; }
+  run_ssm '{"commands":["cat /proc/sys/kernel/random/boot_id"]}' 120 || { update_outcome=failure; return 1; }
+  boot_before=$ssm_output
+  boot_before=${boot_before%%[[:space:]]*}
+  if ! run_ssm '{"commands":["export DEBIAN_FRONTEND=noninteractive","apt-get update","apt-get -o Dpkg::Options::=--force-confold dist-upgrade -y","if [ -f /var/run/reboot-required ]; then echo EC2CTL_REBOOT_REQUIRED=1; else echo EC2CTL_REBOOT_REQUIRED=0; fi"]}' "$PATCH_TIMEOUT"; then
+    update_outcome=failure; return 1
+  fi
+  update_outcome=success
+  if [[ $ssm_output == *EC2CTL_REBOOT_REQUIRED=1* ]]; then
+    reboot_outcome=failure
+    run_ssm '{"commands":["systemd-run --unit=ec2ctl-reboot --on-active=5s /usr/bin/systemctl reboot"]}' 120 || return 1
+    sleep "$POLL_INTERVAL"
+    local deadline=$((SECONDS + REBOOT_TIMEOUT)) current_boot=''
+    while ((SECONDS <= deadline)); do
+      if wait_for_ssm && run_ssm '{"commands":["cat /proc/sys/kernel/random/boot_id"]}' 120; then
+        current_boot=$ssm_output
+        current_boot=${current_boot%%[[:space:]]*}
+        [[ -n $current_boot && $current_boot != "$boot_before" ]] && break
+      fi
+      sleep "$POLL_INTERVAL"
+    done
+    [[ -n $current_boot && $current_boot != "$boot_before" ]] || return 1
+    wait_for_health || return 1
+    reboot_outcome=success
+  fi
+  maintenance_rc=0
+}
+
+cost_audit() {
+  (($# == 0)) || die 'cost-audit takes no options'
+  local volumes addresses public_ip
+  volumes=$(aws_cli ec2 describe-volumes --filters "Name=attachment.instance-id,Values=$INSTANCE_ID" \
+    --query 'Volumes[].[VolumeId,Size,VolumeType,State]' --output text) || return 1
+  addresses=$(aws_cli ec2 describe-addresses --filters "Name=instance-id,Values=$INSTANCE_ID" \
+    --query 'Addresses[].[AllocationId,PublicIp]' --output text) || return 1
+  public_ip=$(ec2_value 'Reservations[0].Instances[0].PublicIpAddress') || return 1
+  printf 'EBS volumes (billed while stopped):\n%s\n' "${volumes:-none}"
+  printf 'Elastic IPv4 addresses associated with this instance:\n%s\n' "${addresses:-none}"
+  printf 'Current public IPv4: %s\n' "$public_ip"
+  printf 'Review snapshots, unattached volumes, load balancers, NAT gateways, and other account-level resources separately.\n'
+}
+
+require_aws
+case $command_name in
+  sizes) show_sizes "$@" ;;
+  start) start_instance "$@" ;;
+  stop) stop_instance "$@" ;;
+  status) show_status "$@" ;;
+  maintain) maintain_instance "$@" ;;
+  cost-audit) cost_audit "$@" ;;
+  *) usage >&2; die "unknown command: $command_name" ;;
+esac

@@ -1,0 +1,50 @@
+#!/usr/bin/env bash
+set -uo pipefail
+
+state_file=${FAKE_AWS_STATE_FILE:?}
+log_file=${FAKE_AWS_LOG_FILE:?}
+printf '%q ' "$@" >>"$log_file"; printf '\n' >>"$log_file"
+
+args=("$@")
+service='' action='' query=''
+for ((i=0; i<${#args[@]}; i++)); do
+  case ${args[i]} in
+    ec2|ssm) service=${args[i]}; action=${args[i+1]:-}; ((i++)) ;;
+    --query) query=${args[i+1]:-}; ((i++)) ;;
+  esac
+done
+state=$(<"$state_file")
+
+case "$service/$action" in
+  ec2/describe-instances)
+    case $query in
+      *State.Name*)
+        if [[ $query == *InstanceType* ]]; then printf '%s\tt3.medium\t2026-01-01T00:00:00+00:00\tus-east-2b\t1.2.3.4\n' "$state"
+        else printf '%s\n' "$state"; fi ;;
+      *InstanceType*) printf 't3.medium\n' ;;
+      *Placement.AvailabilityZone*) printf 'us-east-2b\n' ;;
+      *ImageId*) printf 'ami-test\n' ;;
+      *Architecture*) printf 'x86_64\n' ;;
+      *PublicIpAddress*) printf '1.2.3.4\n' ;;
+      *) printf 'None\n' ;;
+    esac ;;
+  ec2/describe-instance-status) printf 'ok\tok\n' ;;
+  ec2/start-instances) printf 'running' >"$state_file" ;;
+  ec2/stop-instances)
+    if [[ ${FAKE_NORMAL_STOP_STUCK:-0} == 1 && ${args[*]} != *--force* ]]; then :
+    else printf 'stopped' >"$state_file"; fi ;;
+  ec2/modify-instance-attribute) : ;;
+  ec2/describe-instance-types) printf '4096\t2\tx86_64\thvm\trequired\trequired\n' ;;
+  ec2/describe-instance-type-offerings) printf 't3.medium\n' ;;
+  ec2/describe-volumes) printf 'vol-test\t100\tgp3\tin-use\n' ;;
+  ec2/describe-addresses) printf 'eipalloc-test\t1.2.3.4\n' ;;
+  ssm/describe-instance-information) printf 'Online\n' ;;
+  ssm/send-command)
+    if [[ ${args[*]} == *apt-get* ]]; then printf 'cmd-update\n'; else printf 'cmd-check\n'; fi ;;
+  ssm/get-command-invocation)
+    if [[ $query == Status ]]; then
+      if [[ ${FAKE_PATCH_FAIL:-0} == 1 && ${args[*]} == *cmd-update* ]]; then printf 'Failed\n'; else printf 'Success\n'; fi
+    elif [[ ${args[*]} == *cmd-update* ]]; then printf 'updates complete EC2CTL_REBOOT_REQUIRED=0\t\n'
+    else printf 'fake-boot-id\t\n'; fi ;;
+  *) printf 'unexpected fake AWS call: %s/%s query=%s\n' "$service" "$action" "$query" >&2; exit 2 ;;
+esac

@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+set -euo pipefail
+file=${FAKE_CRONTAB_FILE:?}
+if [[ ${1:-} == -l ]]; then
+  [[ -f $file ]] && command cat "$file"
+elif [[ ${1:-} == - ]]; then
+  command cp /dev/stdin "$file"
+else
+  printf 'unexpected crontab arguments\n' >&2
+  exit 2
+fi

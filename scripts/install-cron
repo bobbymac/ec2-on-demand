@@ -1,0 +1,38 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+script_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
+repo_dir=$(cd -- "$script_dir/.." && pwd)
+profile=${AWS_PROFILE:-default}
+
+usage() { printf 'Usage: %s [--profile NAME]\n' "${0##*/}"; }
+while (($#)); do
+  case $1 in
+    --profile) (($# >= 2)) || { usage >&2; exit 2; }; profile=$2; shift 2 ;;
+    -h|--help) usage; exit 0 ;;
+    *) usage >&2; exit 2 ;;
+  esac
+done
+
+command -v crontab >/dev/null || { printf 'error: crontab is required\n' >&2; exit 1; }
+command -v flock >/dev/null || { printf 'error: flock is required\n' >&2; exit 1; }
+
+state_dir=${XDG_STATE_HOME:-${HOME}/.local/state}/ec2ctl
+mkdir -p -m 700 "$state_dir"
+marker='# ec2-on-demand weekly maintenance'
+cron_command="0 3 * * 6 /usr/bin/flock -n '$state_dir/maintenance.lock' /usr/bin/env EC2CTL_LOCK_HELD=1 '$repo_dir/bin/ec2ctl' --profile '$profile' maintain >> '$state_dir/cron.log' 2>&1"
+existing=$(crontab -l 2>/dev/null || true)
+filtered=$(printf '%s\n' "$existing" | awk -v marker="$marker" '
+  $0 == "CRON_TZ=America/Chicago" { next }
+  $0 == marker { skip=1; next }
+  skip == 1 { skip=0; next }
+  { print }
+')
+{
+  printf '%s\n' "$filtered"
+  printf 'CRON_TZ=America/Chicago\n'
+  printf '%s\n%s\n' "$marker" "$cron_command"
+} | awk 'NF || previous { print } { previous=NF }' | crontab -
+
+printf 'Installed Saturday 3:00 AM America/Chicago maintenance for profile %s.\n' "$profile"
+printf 'Logs and results: %s\n' "$state_dir"
