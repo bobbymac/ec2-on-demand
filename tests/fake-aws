@@ -3,6 +3,7 @@ set -uo pipefail
 
 state_file=${FAKE_AWS_STATE_FILE:?}
 log_file=${FAKE_AWS_LOG_FILE:?}
+[[ -z ${FAKE_AWS_DELAY:-} ]] || sleep "$FAKE_AWS_DELAY"
 printf '%q ' "$@" >>"$log_file"; printf '\n' >>"$log_file"
 
 args=("$@")

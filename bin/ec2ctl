@@ -62,29 +62,74 @@ require_aws() { command -v aws >/dev/null || die 'AWS CLI v2 is required'; }
 ec2_value() { aws_cli ec2 describe-instances --instance-ids "$INSTANCE_ID" --query "$1" --output text; }
 instance_state() { ec2_value 'Reservations[0].Instances[0].State.Name'; }
 
-wait_for_state() {
+progress_stop() {
+  [[ -n ${progress_pid:-} ]] || return 0
+  kill "$progress_pid" 2>/dev/null || true
+  wait "$progress_pid" 2>/dev/null || true
+  progress_pid=''
+  printf '\r\033[2K' >&2
+}
+
+progress_start() {
+  [[ -t 1 && -t 2 && ${TERM:-dumb} != dumb ]] || return 0
+  (
+    # The animation owns no AWS work. Its traps must not run parent cleanup.
+    trap - EXIT
+    trap 'exit 0' TERM INT
+    frames='|/-\'
+    frame=0
+    while :; do
+      printf '\r\033[2K%s %s (%ss)' "${frames:frame:1}" "$progress_label" "$((SECONDS - progress_started))" >&2
+      frame=$(((frame + 1) % 4))
+      sleep 0.1
+    done
+  ) &
+  progress_pid=$!
+}
+
+# Called only inside a wait function's subshell so the maintenance traps and
+# command status in the caller are preserved, including on failure/interruption.
+progress_begin() {
+  progress_label=$1
+  progress_started=$SECONDS
+  progress_pid=''
+  trap 'progress_stop' EXIT
+  trap 'exit 130' INT
+  trap 'exit 143' TERM
+  printf '%s...\n' "$progress_label"
+  progress_start
+}
+
+wait_for_state() (
   local wanted=$1 timeout=$2 deadline state last=''
+  progress_begin "Waiting for EC2 state: $wanted"
   deadline=$((SECONDS + timeout))
   while ((SECONDS <= deadline)); do
     state=$(instance_state) || return 1
-    if [[ $state != "$last" ]]; then printf 'EC2 state: %s\n' "$state"; last=$state; fi
+    if [[ $state != "$last" ]]; then
+      progress_stop
+      printf 'EC2 state: %s\n' "$state"
+      last=$state
+      [[ $state == "$wanted" ]] || progress_start
+    fi
     [[ $state == "$wanted" ]] && return 0
     [[ $state != terminated && $state != shutting-down ]] || return 1
     sleep "$POLL_INTERVAL"
   done
   return 124
-}
+)
 
-wait_for_health() {
+wait_for_health() (
   local deadline=$((SECONDS + START_TIMEOUT)) health
+  progress_begin 'Waiting for EC2 health checks'
   while ((SECONDS <= deadline)); do
     health=$(aws_cli ec2 describe-instance-status --include-all-instances --instance-ids "$INSTANCE_ID" \
       --query 'InstanceStatuses[0].[InstanceStatus.Status,SystemStatus.Status]' --output text) || return 1
-    [[ $health == $'ok\tok' ]] && { printf 'EC2 health checks: ok\n'; return 0; }
+    [[ $health == $'ok\tok' ]] && { progress_stop; printf 'EC2 health checks: ok\n'; return 0; }
     sleep "$POLL_INTERVAL"
   done
   return 124
-}
+)
 
 is_supported_type() {
   local candidate=$1 item
@@ -155,7 +200,7 @@ choose_type() {
 }
 
 start_instance() {
-  local requested='' choose=false state current
+  local requested='' choose=false state current wait_rc
   while (($#)); do
     case $1 in
       --instance-type) (($# >= 2)) || die '--instance-type requires a value'; requested=$2; shift 2 ;;
@@ -181,23 +226,36 @@ start_instance() {
     pending) printf 'Instance is already starting.\n' ;;
     *) die "instance is $state; wait until it is stopped before starting" ;;
   esac
-  wait_for_state running "$START_TIMEOUT" || die 'instance did not reach running state before the timeout'
-  wait_for_health || die 'EC2 health checks did not pass before the timeout'
+  wait_for_state running "$START_TIMEOUT" || {
+    wait_rc=$?
+    [[ $wait_rc != 130 && $wait_rc != 143 ]] || return "$wait_rc"
+    die 'instance did not reach running state before the timeout'
+  }
+  wait_for_health || {
+    wait_rc=$?
+    [[ $wait_rc != 130 && $wait_rc != 143 ]] || return "$wait_rc"
+    die 'EC2 health checks did not pass before the timeout'
+  }
   printf 'Connect with: tailscale ssh %s@%s\n' "$SSH_USER" "$TAILSCALE_HOST"
 }
 
 stop_instance() {
   (($# == 0)) || die 'stop takes no options'
-  local state
+  local state wait_rc
   state=$(instance_state) || return 1
   [[ $state != stopped ]] || { printf 'Instance is already stopped.\n'; return 0; }
   if [[ $state == terminated || $state == shutting-down ]]; then warn "instance is $state"; return 1; fi
   printf 'Requesting normal shutdown...\n'
   aws_cli ec2 stop-instances --instance-ids "$INSTANCE_ID" >/dev/null || return 1
-  if wait_for_state stopped "$STOP_TIMEOUT"; then return 0; fi
+  if wait_for_state stopped "$STOP_TIMEOUT"; then return 0; else wait_rc=$?; fi
+  [[ $wait_rc != 130 && $wait_rc != 143 ]] || return "$wait_rc"
   warn 'normal shutdown timed out; requesting forced stop (writes may be interrupted)'
   aws_cli ec2 stop-instances --force --instance-ids "$INSTANCE_ID" >/dev/null || return 1
-  wait_for_state stopped "$FORCE_STOP_TIMEOUT" || { warn 'forced stop could not be confirmed'; return 1; }
+  wait_for_state stopped "$FORCE_STOP_TIMEOUT" || {
+    wait_rc=$?
+    [[ $wait_rc != 130 && $wait_rc != 143 ]] || return "$wait_rc"
+    warn 'forced stop could not be confirmed'; return 1
+  }
 }
 
 state_dir_path() { printf '%s/ec2ctl' "${XDG_STATE_HOME:-${HOME}/.local/state}"; }

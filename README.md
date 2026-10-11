@@ -48,6 +48,8 @@ After startup and health checks, run the printed `tailscale ssh <user>@<host>` c
 
 **Leaving SSH does not stop the instance.** There is no automatic runtime limit. Starting an already-running instance or stopping an already-stopped instance is intended to succeed safely.
 
+During startup, health checks, and shutdown, an interactive terminal shows a rotating spinner with elapsed seconds. It indicates that the CLI is still waiting, not a percentage complete. Redirected output, maintenance logs, and terminals with `TERM=dumb` use plain status messages without animation.
+
 Size changes require a stopped instance. The CLI will validate supported types, compatibility, and Availability Zone offerings before changing the type. An offered type does not guarantee available capacity. The selected type persists across stops and is reused by plain startup and maintenance. The instance ID and EBS volumes remain intact.
 
 ### How resizing affects Ubuntu
@@ -139,6 +141,7 @@ There is no build step. Run syntax checks and the fake-AWS test suite with:
 bash -n bin/ec2ctl
 ./tests/test_cli.sh
 ./tests/test_cron.sh
+python3 tests/test_progress.py
 ```
 
 When ShellCheck is installed, also run `shellcheck bin/ec2ctl scripts/install-cron tests/*.sh`. The fake suite covers lifecycle transitions, option validation, status, patch success, shutdown cleanup, local maintenance records, and cost reporting. Live lifecycle tests require explicit authorization because they interrupt the instance.
